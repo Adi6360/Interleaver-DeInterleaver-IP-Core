@@ -1,292 +1,406 @@
-Below is a complete, exam / project-ready explanation that directly matches what is shown in your handwritten IP-core instantiation notes (Interleaver IP + blk_mem_gen_0) and answers exactly what you asked:
-
-Rectangular Block Interleaver (4×4) using BRAM → AXI-Stream → Interleaver IP,
-with MATLAB COE generation and behavioral simulation procedure.
-
-I am writing this in UGC / IEEE project style, suitable for Vivado simulation + report submission.
-
-1. System Overview (What you are building)
-
-You are implementing a 4×4 Rectangular Block Interleaver using:
-
-IP blocks
-
-blk_mem_gen_0
-
-Stores input data (from MATLAB .coe)
-
-Acts as input buffer
-
-AXI-Stream Interleaver IP (sdi_0)
-
-Reads sequential data
-
-Outputs interleaved data
-
-Custom RTL control logic
-
-BRAM read address FSM
-
-AXI-Stream handshaking
-
-Data flow
-MATLAB → interleaver_input.coe
-        ↓
-blk_mem_gen_0 (BRAM)
-        ↓
-AXI-Stream (s_axis)
-        ↓
-Interleaver IP (Rectangular 4×4)
-        ↓
-AXI-Stream (m_axis)
-        ↓
-Simulation output
-
-2. 4×4 Rectangular Block Interleaving Rule
-Input Matrix (Row-wise fill)
-0   1   2   3
-4   5   6   7
-8   9  10  11
-12 13  14  15
-
-Interleaved Output (Column-wise read)
-0,4,8,12,
-1,5,9,13,
-2,6,10,14,
-3,7,11,15
+WORKING CODE ONLY (0,1) ARE SHOWING
 
 
-This is exactly what the Xilinx Interleaver IP performs when configured for rectangular block mode.
-
-3. MATLAB COE File Generation (Input to BRAM)
-MATLAB Code (interleaver_input.coe)
-% ============================================================
-% COE file for 4x4 Rectangular Block Interleaver
-% Vivado blk_mem_gen input
-% ============================================================
-
-clc; clear;
-
-R = 4;
-C = 4;
-N = R * C;
-
-data = 0:N-1;   % Sequential symbols
-
-fid = fopen('interleaver_input.coe','w');
-
-fprintf(fid,'memory_initialization_radix=10;\n');
-fprintf(fid,'memory_initialization_vector=\n');
-
-for i = 1:N
-    if i == N
-        fprintf(fid,'%d;\n', data(i));
-    else
-        fprintf(fid,'%d,\n', data(i));
-    end
-end
-
-fclose(fid);
 
 
-✔ Load this .coe into blk_mem_gen_0
-✔ Data width: 8 bits
-✔ Depth: 16
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date: 07.01.2026 22:51:45
+// Design Name: 
+// Module Name: interleaver
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date: 07.01.2026 22:38:44
+// Design Name: 
+// Module Name: interleaver
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
 
-4. blk_mem_gen_0 Configuration (Important)
-Parameter	Value
-Interface	Native
-Memory Type	Single Port ROM
-Data Width	8
-Depth	16
-Load Init File	interleaver_input.coe
-Enable Port	Always enabled
-5. Interleaver IP Core Configuration
 
-From your handwritten sdi_0 instantiation:
-
-Key settings
-Parameter	Value
-Mode	Rectangular Block
-Rows	4
-Columns	4
-Data Width	8
-Interface	AXI-Stream
-Latency	Auto
-6. Top-Level RTL (BRAM → AXI-Stream → Interleaver)
-interleaver_top.v
-module interleaver_top (
-    input  wire        aclk,
-    input  wire        aresetn,
-    output wire [7:0]  interleaved_out,
-    output wire        out_valid
+module interleaver
+(
+    input  wire aclk,
+    input  wire aresetn
 );
 
-    // --------------------------------------------------------
-    // BRAM signals
-    // --------------------------------------------------------
-    reg  [3:0] bram_addr;
-    wire [7:0] bram_dout;
+    /* ============================================================
+       PARAMETERS
+       ============================================================ */
+    localparam DATA_WIDTH = 8;
+    localparam BLOCK_SIZE = 16;
 
-    // --------------------------------------------------------
-    // AXI-Stream signals
-    // --------------------------------------------------------
-    reg        s_axis_tvalid;
-    wire       s_axis_tready;
-    reg  [7:0] s_axis_tdata;
-    reg        s_axis_tlast;
+    /* ============================================================
+       BRAM SIGNALS
+       ============================================================ */
+    wire  [3:0] bram_addr;
+    reg  [3:0] sample_cnt;
+	
+	assign bram_addr = sample_cnt;
 
-    wire [7:0] m_axis_tdata;
-    wire       m_axis_tvalid;
+    /* ============================================================
+       AXI STREAM INPUT (s_axis → Interleaver)
+       ============================================================ */
+    wire  [DATA_WIDTH-1:0] s_axis_data_tdata;
+    reg                   s_axis_data_tvalid;
+    reg                   s_axis_data_tready;
+    reg                   s_axis_data_tlast;
+	wire                  data_tready;
+	wire                  data_tlast;
+	wire                  data_tvalid;
 
-    // --------------------------------------------------------
-    // BRAM Instance
-    // --------------------------------------------------------
-    blk_mem_gen_0 u_bram (
-        .clka(aclk),
-        .ena(1'b1),
-        .addra(bram_addr),
-        .douta(bram_dout)
-    );
+    /* ============================================================
+       AXI STREAM OUTPUT (m_axis ← Interleaver)
+       ============================================================ */
+    wire [DATA_WIDTH-1:0] m_axis_data_tdata;
+    wire                  m_axis_data_tvalid;
+    wire                  m_axis_data_tlast;
+    wire [1:0]            m_axis_data_tuser;
+    wire                  m_axis_data_tready;
 
-    // --------------------------------------------------------
-    // Interleaver IP Instance (as per your notes)
-    // --------------------------------------------------------
-    sdi_0 u_interleaver (
-        .aclk(aclk),
-        .aresetn(aresetn),
+    assign m_axis_data_tready = 1'b1;   // Always ready (per PG049)
+	
+	assign data_tready = s_axis_data_tready;
+	assign data_tvalid = s_axis_data_tvalid;
+	assign data_tlast = s_axis_data_tlast;
 
-        .s_axis_data_tvalid(s_axis_tvalid),
-        .s_axis_data_tready(s_axis_tready),
-        .s_axis_data_tdata(s_axis_tdata),
-        .s_axis_data_tlast(s_axis_tlast),
+         reg [1:0] state;   
+    /* ============================================================
+       FSM STATE DECLARATION
+       ============================================================ */
+   
+    localparam    IDLE  = 2'b00;
+    localparam    SEND  = 2'b01;
+    localparam    WAIT  = 2'b10;
+    localparam    DONE  = 2'b11;
+   
 
-        .m_axis_data_tvalid(m_axis_tvalid),
-        .m_axis_data_tdata(m_axis_tdata)
-    );
 
-    // --------------------------------------------------------
-    // BRAM Read + AXI Stream Control FSM
-    // --------------------------------------------------------
+    /* ============================================================
+       FSM SEQUENTIAL LOGIC
+       ============================================================ */
     always @(posedge aclk) begin
         if (!aresetn) begin
-            bram_addr      <= 0;
-            s_axis_tvalid  <= 0;
-            s_axis_tlast   <= 0;
-        end else begin
-            s_axis_tvalid <= 1'b1;
+       
+            sample_cnt           <= 0;
+            s_axis_data_tvalid   <= 0;
+            s_axis_data_tlast    <= 0;
+        end
+        else begin
+		    s_axis_data_tvalid <= 1;
+		     state<= IDLE;
+            case (state)
 
-            if (s_axis_tready) begin
-                s_axis_tdata <= bram_dout;
-                bram_addr   <= bram_addr + 1;
-
-                if (bram_addr == 15)
-                    s_axis_tlast <= 1'b1;
-                else
-                    s_axis_tlast <= 1'b0;
+            /* ---------------- IDLE ---------------- */
+            IDLE: begin
+             
+                sample_cnt         <= 0;
+                s_axis_data_tlast  <= 0;
+                state              <= SEND;
             end
+
+            /* ---------------- SEND BLOCK ---------------- */
+            SEND: begin
+                if (s_axis_data_tvalid) begin
+                    s_axis_data_tready <= 1'b1;
+					end
+				if(s_axis_data_tready)begin
+		
+				if(sample_cnt <= BLOCK_SIZE)begin
+                   sample_cnt <= sample_cnt+1;
+				   end
+                end
+                else begin sample_cnt <= 0;
+                end				
+                if (sample_cnt == BLOCK_SIZE-1) begin
+				    s_axis_data_tlast <= 1;
+                        state <= WAIT;
+                    end
+                end
+
+            /* ---------------- WAIT FOR OUTPUT ---------------- */
+            WAIT: begin
+                s_axis_data_tvalid <= 1'b0;
+                s_axis_data_tlast  <= 1'b0;
+                state <= DONE;
+            end
+
+            /* ---------------- DONE ---------------- */
+            DONE: begin
+                // Hold state, observe m_axis outputs in waveform
+                state <= DONE;
+            end
+
+            endcase
+        end
+    end
+    
+  
+
+    /* ============================================================
+       BLOCK MEMORY GENERATOR INSTANTIATION (FROM .VEO)
+       ============================================================ */
+    blk_mem_gen_0 bram_inst (
+        .clka  (aclk),
+        .wea   (1'b0),
+        .addra (bram_addr),
+        .dina  (8'd0),
+        .douta (s_axis_data_tdata)
+    );
+
+    /* ============================================================
+       INTERLEAVER IP INSTANTIATION (FROM .VEO)
+       ============================================================ */
+    interleaver_0 interleaver_inst (
+        .aclk                  (aclk),
+        .aresetn               (aresetn),
+
+        .s_axis_data_tdata     (s_axis_data_tdata),
+        .s_axis_data_tvalid    (data_tvalid),
+        .s_axis_data_tready    (data_tready),
+        .s_axis_data_tlast     (data_tlast),
+
+        .m_axis_data_tvalid    (m_axis_data_tvalid),
+        .m_axis_data_tready    (m_axis_data_tready),
+        .m_axis_data_tdata     (m_axis_data_tdata),
+        .m_axis_data_tlast     (m_axis_data_tlast),
+        .m_axis_data_tuser     (m_axis_data_tuser),
+
+        .event_tlast_unexpected(event_tlast_unexpected),
+        .event_tlast_missing   (event_tlast_missing),
+        .event_halted          (event_halted)
+    );
+
+endmodule
+
+Fully Working with all data  Right-click aresetn
+
+Force → Force Constant → 0
+
+Run 100 ns
+
+Force to 1
+
+Run again
+
+Code:
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date: 07.01.2026 22:51:45
+// Design Name: 
+// Module Name: interleaver
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date: 07.01.2026 22:38:44
+// Design Name: 
+// Module Name: interleaver
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
+
+//////////////////////////////////////////////////////////////////////////////////
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+module interleaver (
+    input  wire aclk,
+    input  wire aresetn
+);
+
+    /* ============================================================
+       PARAMETERS
+       ============================================================ */
+    localparam DATA_WIDTH = 8;
+    localparam BLOCK_SIZE = 16;
+
+    /* ============================================================
+       BRAM SIGNALS
+       ============================================================ */
+    wire [3:0] bram_addr;
+    reg  [3:0] sample_cnt;
+
+    assign bram_addr = sample_cnt;
+
+    /* ============================================================
+       AXI STREAM INPUT
+       ============================================================ */
+    wire [DATA_WIDTH-1:0] s_axis_data_tdata;
+    reg                   s_axis_data_tvalid;
+    reg                   s_axis_data_tready;
+    reg                   s_axis_data_tlast;
+
+    wire data_tready;
+    wire data_tlast;
+    wire data_tvalid;
+
+    /* ============================================================
+       AXI STREAM OUTPUT
+       ============================================================ */
+    wire [DATA_WIDTH-1:0] m_axis_data_tdata;
+    wire                  m_axis_data_tvalid;
+    wire                  m_axis_data_tlast;
+    wire [1:0]            m_axis_data_tuser;
+    wire                  m_axis_data_tready;
+
+    assign m_axis_data_tready = 1'b1;
+
+    assign data_tready = s_axis_data_tready;
+    assign data_tvalid = s_axis_data_tvalid;
+    assign data_tlast  = s_axis_data_tlast;
+
+    reg [1:0] state;
+
+    /* ============================================================
+       FSM STATES
+       ============================================================ */
+    localparam IDLE = 2'b00;
+    localparam SEND = 2'b01;
+    localparam WAIT = 2'b10;
+    localparam DONE = 2'b11;
+
+    /* ============================================================
+       FSM SEQUENTIAL LOGIC
+       ============================================================ */
+    always @(posedge aclk) begin
+        if (!aresetn) begin
+            sample_cnt         <= 0;
+            s_axis_data_tvalid <= 0;
+            s_axis_data_tlast  <= 0;
+            s_axis_data_tready <= 0;   // ✅ FIX #3
+            state              <= IDLE;
+        end
+        else begin
+            s_axis_data_tvalid <= 1;
+
+            case (state)
+
+            IDLE: begin
+                sample_cnt        <= 0;
+                s_axis_data_tlast <= 0;
+                state             <= SEND;
+            end
+
+            SEND: begin
+                s_axis_data_tready <= 1'b1;
+
+                if (s_axis_data_tready && s_axis_data_tvalid) begin
+                    if (sample_cnt < BLOCK_SIZE-1)   // ✅ FIX #2
+                        sample_cnt <= sample_cnt + 1;
+                end
+
+                if (sample_cnt == BLOCK_SIZE-1) begin
+                    s_axis_data_tlast <= 1;
+                    state <= WAIT;
+                end
+            end
+
+            WAIT: begin
+                s_axis_data_tvalid <= 1'b0;
+                s_axis_data_tlast  <= 1'b0;
+                state <= DONE;
+            end
+
+            DONE: begin
+                state <= DONE;
+            end
+
+            endcase
         end
     end
 
-    assign interleaved_out = m_axis_tdata;
-    assign out_valid       = m_axis_tvalid;
-
-endmodule
-
-7. Testbench (Behavioral Simulation)
-tb_interleaver.v
-module tb_interleaver;
-
-    reg clk = 0;
-    reg rstn = 0;
-
-    wire [7:0] out_data;
-    wire out_valid;
-
-    always #5 clk = ~clk;
-
-    interleaver_top DUT (
-        .aclk(clk),
-        .aresetn(rstn),
-        .interleaved_out(out_data),
-        .out_valid(out_valid)
+    /* ============================================================
+       BLOCK MEMORY GENERATOR
+       ============================================================ */
+    blk_mem_gen_0 bram_inst (
+        .clka  (aclk),
+        .wea   (1'b0),
+        .addra (bram_addr),
+        .dina  (8'd0),
+        .douta (s_axis_data_tdata)
     );
+      /* ---------------- INTERLEAVER ---------------- */
+    interleaver_0 interleaver_inst (
+        .aclk                  (aclk),
+        .aresetn               (aresetn),
 
-    initial begin
-        #20 rstn = 1;
-        #500 $finish;
-    end
+        .s_axis_data_tdata     (s_axis_data_tdata),
+        .s_axis_data_tvalid    (data_tvalid),
+        .s_axis_data_tready    (data_tready),
+        .s_axis_data_tlast     (data_tlast),
 
-    always @(posedge clk) begin
-        if (out_valid)
-            $display("Time=%0t Interleaved Data=%0d",
-                      $time, out_data);
-    end
+        .m_axis_data_tvalid    (m_axis_data_tvalid),
+        .m_axis_data_tready    (m_axis_data_tready),
+        .m_axis_data_tdata     (m_axis_data_tdata),
+        .m_axis_data_tlast     (m_axis_data_tlast),
+        .m_axis_data_tuser     (m_axis_data_tuser),
+
+        .event_tlast_unexpected(event_tlast_unexpected),
+        .event_tlast_missing   (event_tlast_missing),
+        .event_halted          (event_halted)
+    );
+    
+
 
 endmodule
+//////////////////////////////////////////////////////////////////////////////////
 
-8. Expected Simulation Output
-0
-4
-8
-12
-1
-5
-9
-13
-2
-6
-10
-14
-3
-7
-11
-15
+<img width="1919" height="967" alt="image" src="https://github.com/user-attachments/assets/05b1d93f-95fd-472b-b2a9-87dff35789a8" />
+
+<img width="1918" height="990" alt="image" src="https://github.com/user-attachments/assets/ac3ade18-b200-43f9-bde4-baaa968a2f77" />
 
 
-✔ Confirms correct rectangular interleaving
 
-9. Vivado Simulation Procedure (Step-by-Step)
 
-Create Vivado project
 
-Add RTL files (interleaver_top.v, tb_interleaver.v)
 
-Generate IP:
-
-blk_mem_gen_0
-
-sdi_0
-
-Load MATLAB .coe into BRAM
-
-Run Behavioral Simulation
-
-Observe:
-
-s_axis_tvalid / tready
-
-m_axis_tvalid
-
-Interleaved output sequence
-
-10. Key Viva / Report Points
-
-BRAM decouples memory and processing
-
-AXI-Stream enables scalable streaming
-
-Interleaver IP abstracts permutation logic
-
-COE allows MATLAB ↔ RTL verification
-
-Same design is synthesizable on FPGA
-
-If you want next:
-✔ De-interleaver RTL
-✔ AXI-Stream waveform explanation
-✔ Vivado screenshots + report write-up
-✔ ILA hardware validation
-✔ IEEE block diagram
-
-Just tell me 👍
