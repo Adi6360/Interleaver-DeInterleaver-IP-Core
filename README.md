@@ -1,424 +1,100 @@
-WORKING CODE ONLY (0,1) ARE SHOWING
-
-
-============================================================
-
 `timescale 1ns / 1ps
-
-module interleaver (
+//////////////////////////////////////////////////////////////////////////////////
+module interleaver_top (
     input  wire aclk,
     input  wire aresetn
 );
 
-    /* ============================================================
-       PARAMETERS
-       ============================================================ */
     localparam DATA_WIDTH = 8;
     localparam BLOCK_SIZE = 16;
 
-    /* ============================================================
-       BRAM SIGNALS
-       ============================================================ */
-    wire [3:0] bram_addr;
+    /* ================= BRAM ================= */
     reg  [3:0] sample_cnt;
+    wire [3:0] bram_addr = sample_cnt;
+    wire [7:0] bram_data;
 
-    assign bram_addr = sample_cnt;
-
-    /* ============================================================
-       AXI STREAM INPUT
-       ============================================================ */
-    wire [DATA_WIDTH-1:0] s_axis_data_tdata;
+    /* ================= AXI INPUT ================= */
     reg                   s_axis_data_tvalid;
-    reg                   s_axis_data_tready;
+    wire                  s_axis_data_tready;   // ← FROM IP
     reg                   s_axis_data_tlast;
+    wire [7:0]             s_axis_data_tdata = bram_data;
 
-    wire data_tready;
-    wire data_tlast;
-    wire data_tvalid;
+    /* ================= AXI CTRL ================= */
+    reg  [31:0]            s_axis_ctrl_tdata;
+    reg                   s_axis_ctrl_tvalid;
+    wire                  s_axis_ctrl_tready;
 
-    /* ============================================================
-       AXI STREAM OUTPUT
-       ============================================================ */
-    wire [DATA_WIDTH-1:0] m_axis_data_tdata;
-    wire                  m_axis_data_tvalid;
-    wire                  m_axis_data_tlast;
-    wire [1:0]            m_axis_data_tuser;
-    wire                  m_axis_data_tready;
+    /* ================= AXI OUTPUT ================= */
+    wire [7:0]             m_axis_data_tdata;
+    wire                   m_axis_data_tvalid;
+    wire                   m_axis_data_tlast;
+    wire [1:0]             m_axis_data_tuser;
 
-    assign m_axis_data_tready = 1'b1;
-
-    assign data_tready = s_axis_data_tready;
-    assign data_tvalid = s_axis_data_tvalid;
-    assign data_tlast  = s_axis_data_tlast;
-
+    /* ================= FSM ================= */
     reg [1:0] state;
+    localparam IDLE = 2'd0,
+               SEND = 2'd1,
+               WAIT = 2'd2,
+               DONE = 2'd3;
 
-    /* ============================================================
-       FSM STATES
-       ============================================================ */
-    localparam IDLE = 2'b00;
-    localparam SEND = 2'b01;
-    localparam WAIT = 2'b10;
-    localparam DONE = 2'b11;
-
-    /* ============================================================
-       FSM SEQUENTIAL LOGIC
-       ============================================================ */
     always @(posedge aclk) begin
         if (!aresetn) begin
-            sample_cnt         <= 0;
-            s_axis_data_tvalid <= 0;
-            s_axis_data_tlast  <= 0;
-            s_axis_data_tready <= 0;   // ✅ FIX #3
-            state              <= IDLE;
-        end
-        else begin
-            s_axis_data_tvalid <= 1;
-
+            sample_cnt           <= 0;
+            s_axis_data_tvalid   <= 0;
+            s_axis_data_tlast    <= 0;
+            s_axis_ctrl_tvalid   <= 0;
+            state                <= IDLE;
+        end else begin
             case (state)
 
             IDLE: begin
-                sample_cnt        <= 0;
-                s_axis_data_tlast <= 0;
-                state             <= SEND;
-            end
-
-            SEND: begin
-                s_axis_data_tready <= 1'b1;
-
-                if (s_axis_data_tready && s_axis_data_tvalid) begin
-                    if (sample_cnt < BLOCK_SIZE-1)   // ✅ FIX #2
-                        sample_cnt <= sample_cnt + 1;
-                end
-
-                if (sample_cnt == BLOCK_SIZE-1) begin
-                    s_axis_data_tlast <= 1;
-                    state <= WAIT;
-                end
-            end
-
-            WAIT: begin
-                s_axis_data_tvalid <= 1'b0;
-                s_axis_data_tlast  <= 1'b0;
-                state <= DONE;
-            end
-
-            DONE: begin
-                state <= DONE;
-            end
-
-            endcase
-        end
-    end
-
-    /* ============================================================
-       BLOCK MEMORY GENERATOR
-       ============================================================ */
-    blk_mem_gen_0 bram_inst (
-        .clka  (aclk),
-        .wea   (1'b0),
-        .addra (bram_addr),
-        .dina  (8'd0),
-        .douta (s_axis_data_tdata)
-    );
-      /* ---------------- INTERLEAVER ---------------- */
-    interleaver_0 interleaver_inst (
-        .aclk                  (aclk),
-        .aresetn               (aresetn),
-
-        .s_axis_data_tdata     (s_axis_data_tdata),
-        .s_axis_data_tvalid    (data_tvalid),
-        .s_axis_data_tready    (data_tready),
-        .s_axis_data_tlast     (data_tlast),
-
-        .m_axis_data_tvalid    (m_axis_data_tvalid),
-        .m_axis_data_tready    (m_axis_data_tready),
-        .m_axis_data_tdata     (m_axis_data_tdata),
-        .m_axis_data_tlast     (m_axis_data_tlast),
-        .m_axis_data_tuser     (m_axis_data_tuser),
-
-        .event_tlast_unexpected(event_tlast_unexpected),
-        .event_tlast_missing   (event_tlast_missing),
-        .event_halted          (event_halted)
-    );
-    
-
-
-endmodule
-//////////////////////////////////////////////////////////////////////////////////
-
-
-working code getting all data
-
-
-
-    /* ============================================================ */
-`timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-module interleaver (
-    input  wire aclk,
-    input  wire aresetn
-);
-
-    /* ============================================================
-       PARAMETERS
-       ============================================================ */
-    localparam DATA_WIDTH = 8;
-    localparam BLOCK_SIZE = 16;
-
-    /* ============================================================
-       BRAM SIGNALS
-       ============================================================ */
-    wire [3:0] bram_addr;
-    reg  [3:0] sample_cnt;
-
-    assign bram_addr = sample_cnt;
-
-    /* ============================================================
-       AXI STREAM INPUT
-       ============================================================ */
-    wire [DATA_WIDTH-1:0] s_axis_data_tdata;
-    reg                   s_axis_data_tvalid;
-    reg                   s_axis_data_tready;
-    reg                   s_axis_data_tlast;
-
-    wire data_tready;
-    wire data_tlast;
-    wire data_tvalid;
-
-    /* ============================================================
-       AXI STREAM OUTPUT
-       ============================================================ */
-    wire [DATA_WIDTH-1:0] m_axis_data_tdata;
-    wire                  m_axis_data_tvalid;
-    wire                  m_axis_data_tlast;
-    wire [1:0]            m_axis_data_tuser;
-    wire                  m_axis_data_tready;
-
-    assign m_axis_data_tready = 1'b1;
-
-    assign data_tready = s_axis_data_tready;
-    assign data_tvalid = s_axis_data_tvalid;
-    assign data_tlast  = s_axis_data_tlast;
-
-    reg [1:0] state;
-
-    /* ============================================================
-       FSM STATES
-       ============================================================ */
-    localparam IDLE = 2'b00;
-    localparam SEND = 2'b01;
-    localparam WAIT = 2'b10;
-    localparam DONE = 2'b11;
-
-    /* ============================================================
-       FSM SEQUENTIAL LOGIC
-       ============================================================ */
-    always @(posedge aclk) begin
-        if (!aresetn) begin
-            sample_cnt         <= 0;
-            s_axis_data_tvalid <= 0;
-            s_axis_data_tlast  <= 0;
-            s_axis_data_tready <= 0;   // ✅ FIX #3
-            state              <= IDLE;
-        end
-        else begin
-            s_axis_data_tvalid <= 1;
-
-            case (state)
-
-            IDLE: begin
-                sample_cnt        <= 0;
-                s_axis_data_tlast <= 0;
-                state             <= SEND;
-            end
-
-            SEND: begin
-                s_axis_data_tready <= 1'b1;
-
-                if (s_axis_data_tready && s_axis_data_tvalid) begin
-                    if (sample_cnt < BLOCK_SIZE-1)   // ✅ FIX #2
-                        sample_cnt <= sample_cnt + 1;
-                end
-
-                if (sample_cnt == BLOCK_SIZE-1) begin
-                    s_axis_data_tlast <= 1;
-                    state <= WAIT;
-                end
-            end
-
-            WAIT: begin
-                s_axis_data_tvalid <= 1'b0;
-                s_axis_data_tlast  <= 1'b0;
-                state <= DONE;
-            end
-
-            DONE: begin
-                state <= DONE;
-            end
-
-            endcase
-        end
-    end
-
-    /* ============================================================
-       BLOCK MEMORY GENERATOR
-       ============================================================ */
-    blk_mem_gen_0 bram_inst (
-        .clka  (aclk),
-        .wea   (1'b0),
-        .addra (bram_addr),
-        .dina  (8'd0),
-        .douta (s_axis_data_tdata)
-    );
-
-endmodule
-//////////////////////////////////////////////////////////////////////////////////
-
-
-In waveform:
-Right-click aresetn
-Force → Force Constant → 0
-Run 100 ns
-Force to 1
-Run again
-
-
-
-
-
-<img width="1919" height="967" alt="image" src="https://github.com/user-attachments/assets/05b1d93f-95fd-472b-b2a9-87dff35789a8" />
-
-<img width="1918" height="990" alt="image" src="https://github.com/user-attachments/assets/ac3ade18-b200-43f9-bde4-baaa968a2f77" />
-
-
-
-
-De Interleaver 
-
-
-
-
-
-`timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Rectangular 4x4 De-Interleaver Top
-//////////////////////////////////////////////////////////////////////////////////
-
-module rect_4x4_deinterleaver_top
-(
-    input  wire aclk,
-    input  wire aresetn
-);
-
-    /* ============================================================
-       PARAMETERS
-       ============================================================ */
-    localparam DATA_WIDTH = 8;
-    localparam BLOCK_SIZE = 16;
-
-    /* ============================================================
-       BRAM SIGNALS
-       ============================================================ */
-    wire [3:0] bram_addr;
-    reg  [3:0] sample_cnt;
-
-    assign bram_addr = sample_cnt;
-
-    /* ============================================================
-       AXI-STREAM INPUT (to De-Interleaver)
-       ============================================================ */
-    wire [DATA_WIDTH-1:0] s_axis_data_tdata;
-    reg                  s_axis_data_tvalid;
-    wire                 s_axis_data_tready;
-    reg                  s_axis_data_tlast;
-
-    /* ============================================================
-       AXI-STREAM OUTPUT (from De-Interleaver)
-       ============================================================ */
-    wire [DATA_WIDTH-1:0] m_axis_data_tdata;
-    wire                  m_axis_data_tvalid;
-    wire                  m_axis_data_tlast;
-    wire [1:0]            m_axis_data_tuser;
-    wire                  m_axis_data_tready;
-
-    assign m_axis_data_tready = 1'b1;   // Always ready
-
-    /* ============================================================
-       FSM DECLARATION
-       ============================================================ */
-    reg [1:0] state;
-
-    localparam IDLE = 2'b00,
-               SEND = 2'b01,
-               WAIT = 2'b10,
-               DONE = 2'b11;
-
-    /* ============================================================
-       FSM SEQUENTIAL LOGIC
-       ============================================================ */
-    always @(posedge aclk) begin
-        if (!aresetn) begin
-            state              <= IDLE;
-            sample_cnt         <= 4'd0;
-            s_axis_data_tvalid <= 1'b0;
-            s_axis_data_tlast  <= 1'b0;
-        end
-        else begin
-            case (state)
-
-            /* ---------------- IDLE ---------------- */
-            IDLE: begin
-                sample_cnt         <= 4'd0;
-                s_axis_data_tvalid <= 1'b1;
-                s_axis_data_tlast  <= 1'b0;
+                sample_cnt         <= 0;
+                s_axis_ctrl_tdata  <= BLOCK_SIZE;   // 16
+                s_axis_ctrl_tvalid <= 1'b1;
                 state              <= SEND;
             end
 
-            /* ---------------- SEND BLOCK ---------------- */
             SEND: begin
-                if (s_axis_data_tready) begin
-                    if (sample_cnt < BLOCK_SIZE-1) begin
-                        sample_cnt <= sample_cnt + 1'b1;
-                    end
-                    else begin
+                s_axis_ctrl_tvalid <= 0;
+                s_axis_data_tvalid <= 1'b1;
+
+                if (s_axis_data_tvalid && s_axis_data_tready) begin
+                    sample_cnt <= sample_cnt + 1;
+
+                    if (sample_cnt == BLOCK_SIZE-2)
                         s_axis_data_tlast <= 1'b1;
-                        state <= WAIT;
-                    end
+                end
+
+                if (sample_cnt == BLOCK_SIZE-1) begin
+                    s_axis_data_tvalid <= 0;
+                    s_axis_data_tlast  <= 0;
+                    state <= WAIT;
                 end
             end
 
-            /* ---------------- WAIT ---------------- */
             WAIT: begin
-                s_axis_data_tvalid <= 1'b0;
-                s_axis_data_tlast  <= 1'b0;
                 state <= DONE;
             end
 
-            /* ---------------- DONE ---------------- */
             DONE: begin
-                state <= DONE;  // Hold
+                state <= DONE;
             end
 
             endcase
         end
     end
 
-    /* ============================================================
-       BLOCK MEMORY GENERATOR (Interleaved Input)
-       ============================================================ */
+    /* ================= BRAM ================= */
     blk_mem_gen_0 bram_inst (
         .clka  (aclk),
         .wea   (1'b0),
         .addra (bram_addr),
         .dina  (8'd0),
-        .douta (s_axis_data_tdata)
+        .douta (bram_data)
     );
 
-    /* ============================================================
-       DE-INTERLEAVER IP CORE (PG049)
-       ============================================================ */
-    deinterleaver_0 deinterleaver_inst (
+    /* ================= INTERLEAVER IP ================= */
+    interleaver_0 interleaver_inst (
         .aclk                  (aclk),
         .aresetn               (aresetn),
 
@@ -427,15 +103,216 @@ module rect_4x4_deinterleaver_top
         .s_axis_data_tready    (s_axis_data_tready),
         .s_axis_data_tlast     (s_axis_data_tlast),
 
+        .s_axis_ctrl_tdata     (s_axis_ctrl_tdata),
+        .s_axis_ctrl_tvalid    (s_axis_ctrl_tvalid),
+        .s_axis_ctrl_tready    (s_axis_ctrl_tready),
+
         .m_axis_data_tdata     (m_axis_data_tdata),
         .m_axis_data_tvalid    (m_axis_data_tvalid),
-        .m_axis_data_tready    (m_axis_data_tready),
         .m_axis_data_tlast     (m_axis_data_tlast),
         .m_axis_data_tuser     (m_axis_data_tuser),
-
-        .event_tlast_missing   (event_tlast_missing),
-        .event_tlast_unexpected(event_tlast_unexpected),
-        .event_halted          (event_halted)
+        .m_axis_data_tready    (1'b1)
     );
 
-endmodule            
+endmodule
+//////////////////////////////////////////////////////////////////////////////////
+
+
+
+DEINTERLEAVER
+
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// De-Interleaver Top Module
+// ---------------------------------------------------------------
+// • Reads interleaved data from BRAM
+// • Sends AXI-Stream data to Xilinx De-Interleaver IP
+// • Rectangular Block Mode (4×4)
+// • Symbol width = 8 bits, Block size = 16
+// • Complies with PG049 user guide
+//////////////////////////////////////////////////////////////////////////////////
+module deinterleaver_top (
+    input  wire aclk,        // AXI clock
+    input  wire aresetn       // Active-low reset
+);
+
+    /* ============================================================
+       DESIGN PARAMETERS
+       ============================================================ */
+
+    localparam DATA_WIDTH = 8;      // Width of each symbol
+    localparam BLOCK_SIZE = 16;     // 4×4 rectangular block
+
+    /* ============================================================
+       BRAM SIGNALS
+       ============================================================ */
+
+    reg  [3:0] sample_cnt;          // Counts symbols (0 → 15)
+    wire [3:0] bram_addr;           // BRAM address
+    wire [7:0] bram_data;           // Data read from BRAM
+
+    // Address is driven by sample counter
+    assign bram_addr = sample_cnt;
+
+    /* ============================================================
+       AXI-STREAM INPUT (S_AXIS_DATA)
+       ============================================================ */
+
+    reg                   s_axis_data_tvalid;  // Input data valid
+    wire                  s_axis_data_tready;  // Ready from IP
+    reg                   s_axis_data_tlast;   // End of block indicator
+    wire [DATA_WIDTH-1:0] s_axis_data_tdata;   // Input symbol
+
+    // Feed BRAM output directly to AXI stream
+    assign s_axis_data_tdata = bram_data;
+
+    /* ============================================================
+       AXI-STREAM CONTROL (S_AXIS_CTRL)
+       Required for Rectangular Block mode
+       ============================================================ */
+
+    reg  [31:0] s_axis_ctrl_tdata;   // Control word
+    reg         s_axis_ctrl_tvalid;  // Control valid
+    wire        s_axis_ctrl_tready;  // Control ready from IP
+
+    /*
+       Control Word (PG049):
+       Bits [15:0]  → Block size (16)
+       Bits [31:16] → Reserved
+    */
+
+    /* ============================================================
+       AXI-STREAM OUTPUT (M_AXIS_DATA)
+       ============================================================ */
+
+    wire [DATA_WIDTH-1:0] m_axis_data_tdata;   // De-interleaved output
+    wire                  m_axis_data_tvalid;  // Output valid
+    wire                  m_axis_data_tlast;   // Output TLAST
+    wire [1:0]            m_axis_data_tuser;   // User sideband
+
+    /* ============================================================
+       FSM DECLARATION
+       ============================================================ */
+
+    reg [1:0] state;
+
+    localparam IDLE = 2'd0,   // Send control info
+               SEND = 2'd1,   // Stream data
+               WAIT = 2'd2,   // Wait for IP completion
+               DONE = 2'd3;   // End state
+
+    /* ============================================================
+       FSM SEQUENTIAL LOGIC
+       ============================================================ */
+
+    always @(posedge aclk) begin
+        if (!aresetn) begin
+            // Reset all state and control signals
+            sample_cnt         <= 0;
+            s_axis_data_tvalid <= 0;
+            s_axis_data_tlast  <= 0;
+            s_axis_ctrl_tvalid <= 0;
+            state              <= IDLE;
+        end
+        else begin
+            case (state)
+
+            /* ----------------------------------------------------
+               IDLE STATE
+               Send block size control to De-Interleaver
+               ---------------------------------------------------- */
+            IDLE: begin
+                sample_cnt         <= 0;
+                s_axis_ctrl_tdata  <= BLOCK_SIZE; // 16 symbols
+                s_axis_ctrl_tvalid <= 1'b1;
+                state              <= SEND;
+            end
+
+            /* ----------------------------------------------------
+               SEND STATE
+               Stream interleaved symbols into IP
+               ---------------------------------------------------- */
+            SEND: begin
+                s_axis_ctrl_tvalid <= 1'b0;        // Control sent once
+                s_axis_data_tvalid <= 1'b1;        // Data valid
+
+                // AXI handshake
+                if (s_axis_data_tvalid && s_axis_data_tready) begin
+                    sample_cnt <= sample_cnt + 1;
+
+                    // Assert TLAST on last-1 transfer
+                    if (sample_cnt == BLOCK_SIZE-2)
+                        s_axis_data_tlast <= 1'b1;
+                end
+
+                // After last symbol
+                if (sample_cnt == BLOCK_SIZE-1) begin
+                    s_axis_data_tvalid <= 1'b0;
+                    s_axis_data_tlast  <= 1'b0;
+                    state <= WAIT;
+                end
+            end
+
+            /* ----------------------------------------------------
+               WAIT STATE
+               Allow De-Interleaver to output data
+               ---------------------------------------------------- */
+            WAIT: begin
+                state <= DONE;
+            end
+
+            /* ----------------------------------------------------
+               DONE STATE
+               Terminal state
+               ---------------------------------------------------- */
+            DONE: begin
+                state <= DONE;
+            end
+
+            endcase
+        end
+    end
+
+    /* ============================================================
+       BLOCK MEMORY GENERATOR
+       Holds INTERLEAVED input data
+       ============================================================ */
+
+    blk_mem_gen_0 bram_inst (
+        .clka  (aclk),        // Clock
+        .wea   (1'b0),        // Read-only
+        .addra (bram_addr),   // Address
+        .dina  (8'd0),        // Not used
+        .douta (bram_data)    // Output symbol
+    );
+
+    /* ============================================================
+       DE-INTERLEAVER IP CORE
+       (Configured as De-Interleaver in Vivado)
+       ============================================================ */
+
+    deinterleaver_0 deinterleaver_inst (
+        .aclk                  (aclk),
+        .aresetn               (aresetn),
+
+        // AXI-Stream data input
+        .s_axis_data_tdata     (s_axis_data_tdata),
+        .s_axis_data_tvalid    (s_axis_data_tvalid),
+        .s_axis_data_tready    (s_axis_data_tready),
+        .s_axis_data_tlast     (s_axis_data_tlast),
+
+        // AXI-Stream control input
+        .s_axis_ctrl_tdata     (s_axis_ctrl_tdata),
+        .s_axis_ctrl_tvalid    (s_axis_ctrl_tvalid),
+        .s_axis_ctrl_tready    (s_axis_ctrl_tready),
+
+        // AXI-Stream output
+        .m_axis_data_tdata     (m_axis_data_tdata),
+        .m_axis_data_tvalid    (m_axis_data_tvalid),
+        .m_axis_data_tlast     (m_axis_data_tlast),
+        .m_axis_data_tuser     (m_axis_data_tuser),
+        .m_axis_data_tready    (1'b1)
+    );
+
+endmodule
+//////////////////////////////////////////////////////////////////////////////////
