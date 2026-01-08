@@ -294,5 +294,148 @@ Run again
 
 
 
+De Interleaver 
 
 
+
+
+
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Rectangular 4x4 De-Interleaver Top
+//////////////////////////////////////////////////////////////////////////////////
+
+module rect_4x4_deinterleaver_top
+(
+    input  wire aclk,
+    input  wire aresetn
+);
+
+    /* ============================================================
+       PARAMETERS
+       ============================================================ */
+    localparam DATA_WIDTH = 8;
+    localparam BLOCK_SIZE = 16;
+
+    /* ============================================================
+       BRAM SIGNALS
+       ============================================================ */
+    wire [3:0] bram_addr;
+    reg  [3:0] sample_cnt;
+
+    assign bram_addr = sample_cnt;
+
+    /* ============================================================
+       AXI-STREAM INPUT (to De-Interleaver)
+       ============================================================ */
+    wire [DATA_WIDTH-1:0] s_axis_data_tdata;
+    reg                  s_axis_data_tvalid;
+    wire                 s_axis_data_tready;
+    reg                  s_axis_data_tlast;
+
+    /* ============================================================
+       AXI-STREAM OUTPUT (from De-Interleaver)
+       ============================================================ */
+    wire [DATA_WIDTH-1:0] m_axis_data_tdata;
+    wire                  m_axis_data_tvalid;
+    wire                  m_axis_data_tlast;
+    wire [1:0]            m_axis_data_tuser;
+    wire                  m_axis_data_tready;
+
+    assign m_axis_data_tready = 1'b1;   // Always ready
+
+    /* ============================================================
+       FSM DECLARATION
+       ============================================================ */
+    reg [1:0] state;
+
+    localparam IDLE = 2'b00,
+               SEND = 2'b01,
+               WAIT = 2'b10,
+               DONE = 2'b11;
+
+    /* ============================================================
+       FSM SEQUENTIAL LOGIC
+       ============================================================ */
+    always @(posedge aclk) begin
+        if (!aresetn) begin
+            state              <= IDLE;
+            sample_cnt         <= 4'd0;
+            s_axis_data_tvalid <= 1'b0;
+            s_axis_data_tlast  <= 1'b0;
+        end
+        else begin
+            case (state)
+
+            /* ---------------- IDLE ---------------- */
+            IDLE: begin
+                sample_cnt         <= 4'd0;
+                s_axis_data_tvalid <= 1'b1;
+                s_axis_data_tlast  <= 1'b0;
+                state              <= SEND;
+            end
+
+            /* ---------------- SEND BLOCK ---------------- */
+            SEND: begin
+                if (s_axis_data_tready) begin
+                    if (sample_cnt < BLOCK_SIZE-1) begin
+                        sample_cnt <= sample_cnt + 1'b1;
+                    end
+                    else begin
+                        s_axis_data_tlast <= 1'b1;
+                        state <= WAIT;
+                    end
+                end
+            end
+
+            /* ---------------- WAIT ---------------- */
+            WAIT: begin
+                s_axis_data_tvalid <= 1'b0;
+                s_axis_data_tlast  <= 1'b0;
+                state <= DONE;
+            end
+
+            /* ---------------- DONE ---------------- */
+            DONE: begin
+                state <= DONE;  // Hold
+            end
+
+            endcase
+        end
+    end
+
+    /* ============================================================
+       BLOCK MEMORY GENERATOR (Interleaved Input)
+       ============================================================ */
+    blk_mem_gen_0 bram_inst (
+        .clka  (aclk),
+        .wea   (1'b0),
+        .addra (bram_addr),
+        .dina  (8'd0),
+        .douta (s_axis_data_tdata)
+    );
+
+    /* ============================================================
+       DE-INTERLEAVER IP CORE (PG049)
+       ============================================================ */
+    deinterleaver_0 deinterleaver_inst (
+        .aclk                  (aclk),
+        .aresetn               (aresetn),
+
+        .s_axis_data_tdata     (s_axis_data_tdata),
+        .s_axis_data_tvalid    (s_axis_data_tvalid),
+        .s_axis_data_tready    (s_axis_data_tready),
+        .s_axis_data_tlast     (s_axis_data_tlast),
+
+        .m_axis_data_tdata     (m_axis_data_tdata),
+        .m_axis_data_tvalid    (m_axis_data_tvalid),
+        .m_axis_data_tready    (m_axis_data_tready),
+        .m_axis_data_tlast     (m_axis_data_tlast),
+        .m_axis_data_tuser     (m_axis_data_tuser),
+
+        .event_tlast_missing   (event_tlast_missing),
+        .event_tlast_unexpected(event_tlast_unexpected),
+        .event_halted          (event_halted)
+    );
+
+endmodule            
